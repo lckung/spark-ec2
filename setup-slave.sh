@@ -103,6 +103,10 @@ if [[ -e /vol3 && ! -e /vol ]]; then
   ln -s /vol3 /vol
 fi
 
+# Alias /mnt to /vol0 if it exists.
+if [[ -e /vol0 && ! -e /mnt ]]; then
+  ln -s /vol0 /mnt
+fi
 # Make data dirs writable by non-root users, such as CDH's hadoop user
 chmod -R a+w /mnt*
 
