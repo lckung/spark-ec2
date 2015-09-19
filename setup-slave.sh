@@ -97,16 +97,17 @@ setup_ebs_volume /dev/sdx /vol5
 setup_ebs_volume /dev/sdy /vol6
 setup_ebs_volume /dev/sdz /vol7
 
-# Alias vol to vol3 for backward compatibility: the old spark-ec2 script supports only attaching
+# Alias vol to vol0 if /vol0 exisits.
 # one EBS volume at /dev/sdv.
-if [[ -e /vol3 && ! -e /vol ]]; then
-  ln -s /vol3 /vol
+if [[ -e /vol0 && ! -e /vol ]]; then
+  ln -s /vol0 /vol
 fi
 
-# Alias /mnt to /vol0 if it exists.
+# Alias /mnt to /vol0 if /vol0 exists.
 if [[ -e /vol0 && ! -e /mnt ]]; then
   ln -s /vol0 /mnt
 fi
+
 # Make data dirs writable by non-root users, such as CDH's hadoop user
 chmod -R a+w /mnt*
 

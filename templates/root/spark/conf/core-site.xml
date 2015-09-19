@@ -65,4 +65,19 @@
     <value>{{aws_secret_access_key}}</value>
   </property>
 
+  <property>
+    <name>fs.s3a.connection.maximum</name>
+    <value>128</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.multipart.size</name>
+    <value>104857600</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.multipart.threshold</name>
+    <value>2147483647</value>
+  </property>
+
 </configuration>
