@@ -104,6 +104,7 @@ if [[ -e /vol0 && ! -e /vol ]]; then
 fi
 
 # Alias /mnt to /vol0 if /vol0 exists.
+rm -rf /mnt
 if [[ -e /vol0 && ! -e /mnt ]]; then
   ln -s /vol0 /mnt
 fi
