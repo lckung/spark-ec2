@@ -88,7 +88,7 @@ function setup_ebs_volume {
 }
 
 # Format and mount EBS volume (/dev/sd[s, t, u, v, w, x, y, z]) as /vol[x] if the device exists
-setup_ebs_volume /dev/xvdc /vol0
+setup_ebs_volume /dev/sds /vol0
 setup_ebs_volume /dev/sdt /vol1
 setup_ebs_volume /dev/sdu /vol2
 setup_ebs_volume /dev/sdv /vol3
