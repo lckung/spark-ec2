@@ -8,6 +8,14 @@
     <value>org.apache.hadoop.mapred.ShuffleHandler</value>
   </property>
   <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>{{active_master}}</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.address</name>
+    <value>{{active_master}}:8040</value>
+  </property>
+  <property>
     <name>yarn.resourcemanager.resource-tracker.address</name>
     <value>{{active_master}}:8025</value>
   </property>
@@ -16,9 +24,17 @@
     <value>{{active_master}}:8030</value>
   </property>
   <property>
-    <name>yarn.resourcemanager.address</name>
-    <value>{{active_master}}:8040</value>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>{{yarn_nodemanager_mem_mb}}</value>
   </property>
+  <property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>4096</value>
+  </property>
+  <property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>{{yarn_nodemanager_mem_mb}}</value>
+  </property>  
   <property>
     <name>yarn.application.classpath</name>
     <value>$HADOOP_CONF_DIR, $HADOOP_COMMON_HOME/share/hadoop/common/*, $HADOOP_COMMON_HOME/share/hadoop/common/lib/*, $HADOOP_HDFS_HOME/share/hadoop/hdfs/*, $HADOOP_HDFS_HOME/share/hadoop/hdfs/lib/*, $HADOOP_HDFS_HOME/share/hadoop/tools/lib/*, $HADOOP_YARN_HOME/share/hadoop/yarn/*, $HADOOP_YARN_HOME/share/hadoop/yarn/lib/*</value>
