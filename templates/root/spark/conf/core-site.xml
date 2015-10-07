@@ -71,13 +71,18 @@
   </property>
 
   <property>
+    <name>fs.s3a.fast.upload</name>
+    <value>true</value>
+  </property>
+
+  <property>
     <name>fs.s3a.multipart.size</name>
-    <value>104857600</value>
+    <value>10485760</value>
   </property>
 
   <property>
     <name>fs.s3a.multipart.threshold</name>
-    <value>2147483647</value>
+    <value>52428800</value>
   </property>
 
 </configuration>
