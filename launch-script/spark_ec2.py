@@ -163,8 +163,7 @@ class UsageError(Exception):
     pass
 
 
-# Configure and parse our command-line arguments
-def parse_args():
+def get_parser():
     parser = OptionParser(
         prog="spark-ec2",
         version="%prog {v}".format(v=SPARK_EC2_VERSION),
@@ -322,7 +321,11 @@ def parse_args():
     parser.add_option(
         "--instance-profile-name", default=None,
         help="IAM profile name to launch instances under")
+    return parser
 
+# Configure and parse our command-line arguments
+def parse_args():
+    parser = get_parser()
     (opts, args) = parser.parse_args()
     if len(args) != 2:
         parser.print_help()
