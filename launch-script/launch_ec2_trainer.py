@@ -37,6 +37,9 @@ def get_opt_parser():
     parser.add_option(
         "--model-file", default="spark_click_model.tsv.gz",
         help="Output model file")
+    parser.add_option(
+        "--stop-cluster", action="store_true", default=False,
+        help="Whether to stop the aws cluster after training.")
     return parser
 
 
@@ -127,13 +130,28 @@ def launch_training_job(master_nodes, trainset_date, opts, ec2_opts):
     """Launch a training job on spark cluster."""
     master = master_nodes[0].public_dns_name
     print("Setting up HDFS on the cluster..")
-    ssh(host=master, opts=ec2_opts, command="chmod u+x /root/setup_pricer_data.sh")
-    ssh(host=master, opts=ec2_opts, command="/root/setup_pricer_data.sh")
+    ssh(host=master, opts=ec2_opts, command="chmod u+x /root/spark-ec2/setup_pricer_data.sh")
+    ssh(host=master, opts=ec2_opts, command="/root/spark-ec2/setup_pricer_data.sh")
     print("Running trainer..")
-    ssh(host=master, opts=ec2_opts, command="chmod u+x /root/run_aws_trainer.sh")
-    ssh(host=master, opts=ec2_opts, command="nohup /root/run_aws_trainer.sh {d}>log.aws_trainer 2>log.err </dev/null".format(d=trainset_date))
+    ssh(host=master, opts=ec2_opts, command="chmod u+x /root/spark-ec2/run_aws_trainer.sh")
+    ssh(host=master, opts=ec2_opts, command="nohup /root/spark-ec2/run_aws_trainer.sh {d} 2>&1 </dev/null |tee log.aws_trainer".format(d=trainset_date))
     print("Trainer is launched successfully..")
     
+def stop_aws_cluster(conn, opts, ec2_opts):
+    (master_nodes, slave_nodes) = get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
+    print("Stopping master...")
+    for inst in master_nodes:
+        if inst.state not in ["shutting-down", "terminated"]:
+            inst.stop()
+    print("Stopping slaves...")
+    for inst in slave_nodes:
+        if inst.state not in ["shutting-down", "terminated"]:
+            if inst.spot_instance_request_id:
+                inst.terminate()
+            else:
+                inst.stop()
+    print("All instances stopped...")
+
 def get_boto_conn(ec2_opts):
     try:
         conn = boto.ec2.connect_to_region(ec2_opts.region)
@@ -181,7 +199,7 @@ def main():
             hadoop=opts.hadoop_cmd, prefix=opts.s3_folder, date=trainset_date, done_file=opts.done_file)) == 0:
             print("Done file detected! Training job is done")
             break
-        sys.sleep(60)
+        time.sleep(60)
         print(".")
     
     # run distcp to copy the model back to S3 and bidderpath
@@ -190,6 +208,8 @@ def main():
         print("distcp model back failed!")
         sys.exit(1)
     print("Model file distcp is done!")
+    if opts.stop_cluster:
+        stop_aws_cluster(conn, opts, ec2_opts)
 
 if __name__ == '__main__':
     main()
