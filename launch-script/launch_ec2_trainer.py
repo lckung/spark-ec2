@@ -1,8 +1,11 @@
 #!/usr/bin/env python
+from __future__ import division, print_function, with_statement
 
+from datetime import datetime
 import subprocess
 import sys
 import spark_ec2
+from optparse import OptionParser
 import boto
 
 TRAIN_INPUT = "trainout/withpubs_pricer.gz"
@@ -14,13 +17,13 @@ DONE_FILE = "TRAINING_DONE"
 MODEL_FILE = "spark_click_model.tsv.gz"
 
 def run_cmd(cmd):
-    print cmd
+    print(cmd)
     proc = subprocess.Popen(cmd, shell=True)
     proc.wait()
     return proc.returncode
 
 def run_cmd_ignore(cmd):
-    print cmd
+    print(cmd)
     proc = subprocess.Popen(cmd, shell=True)
     proc.wait()
 
@@ -38,7 +41,7 @@ def launch_aws_cluster():
     try:
         conn = boto.ec2.connect_to_region(opts.region)
     except Exception as e:
-        print((e), file=stderr)
+        print(repr(e), file=stderr)
         sys.exit(1)
 
     (master_nodes, slave_nodes) = spark_ec2.launch_cluster(conn, opts, cluster_name)
@@ -87,6 +90,19 @@ def ssh(host, opts, command):
             time.sleep(30)
             tries = tries + 1
 
+def launch_copy_input(opts):
+    try:
+        train_date_str = subprocess.check_output([HADOOP, "fs", "-stat", TRAIN_INPUT]).rstrip()
+        train_date = datetime.strptime(train_date_str, "%Y-%m-%d %H:%M:%S")
+    except subprocess.CalledProcessError:
+        print("{input} doesn't exist on HDFS! Unable to continue.".format(input=opts.input))
+        sys.exit(1)
+    # run distcp to copy training data to S3
+    s3_folder = S3N_PREFIX + "/" + train_date.strftime("%Y%m%d")
+    s3_input_path = s3_folder + "/withpubs_pricer.gz"
+    if subprocess.call([opts.hadoop_cmd, "distcp", opts.input, s3_input_path]) != 0:
+        print("distcp failed!")
+        sys.exit(1)
 
 def launch_training_job(master_nodes, s3_folder):
     """Launch a training job on spark cluster."""
@@ -100,21 +116,27 @@ def launch_training_job(master_nodes, s3_folder):
     ssh(host=master,opts=opts,
         command="run_aws_trainer.sh")
     
+def get_opt_parser():
+    parser = OptionParser(
+        prog="launch_ec2_trainer",
+        usage="%prog [options]\n")
+    parser.add_option(
+        "--input", default=TRAIN_INPUT,
+        help="Training input file on HDFS")
+    parser.add_option(
+        "--hadoop-cmd", default="/usr/bin/hadoop",
+        help="Path to hadoop command")
+    parser.add_option(
+        "--skip-copy-input", action="store_true", default=False,
+        help="Skip copy input file to S3")
+    return parser
+
 def main():
+    parser = get_opt_parser()
+    (opts, args) = parser.parse_args()
     # check if input is there
-    try:
-        train_date_str = subprocess.check_output(["/usr/bin/hadoop", "fs", "-stat", TRAIN_INPUT]).rstrip()
-        train_date = datetime.strptime(train_date_str, "%Y-%m-%d %H:%M:%S")
-    except subprocess.CalledProcessError:
-        print "{input} doesn't exist on HDFS! Unable to continue.".format(input=TRAIN_INPUT)
-        sys.exit(1)
-    
-    # run distcp to copy training data to S3
-    s3_folder = S3N_PREFIX + "/" + train_date.strftime("%Y%m%d")
-    s3_input_path = s3_folder + "/withpubs_pricer.gz"
-    if run_cmd([HADOOP, "distcp", TRAIN_INPUT, s3_input_path]) != 0:
-        print "distcp failed!"
-        sys.exit(1)
+    if not opts.skip_copy_input:
+        launch_copy_input(opts)
     
     # launch an AWS cluster
     master_nodes = launch_aws_cluster()
@@ -123,13 +145,18 @@ def main():
     launch_training_job(master_nodes, s3_folder)
     
     # wait till training is done
+    print("Waiting for training job..")
     while (True):
-        if run_cmd("{hadoop} fs -stat {done_file}".format(hadoop=HADOOP, 
-                                                          done_file=s3_folder + "/" + DONE_FILE))
+        if run_cmd("{hadoop} fs -stat {done_file}".format(hadoop=HADOOP, done_file=s3_folder + "/" + DONE_FILE)) == 0:
+            print("Done file detected! Training job is done")
+            break
+        sys.sleep(60)
+        print(".")
     
     # run distcp to copy the model back to S3 and bidderpath
-    if run_cmd("{hadoop} distcp {s3_train_out} {model}".format(hadoop = HADOOP,
-                                                               s3_train_out = s3_folder + "/" + MODEL_FILE))
+    if run_cmd("{hadoop} distcp {s3_train_out} {model}".format(hadoop = HADOOP, s3_train_out = s3_folder + "/" + MODEL_FILE)):
+        print("distcp model back failed!")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
