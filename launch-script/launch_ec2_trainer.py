@@ -138,7 +138,7 @@ def launch_training_job(master_nodes, trainset_date, opts, ec2_opts):
     print("Trainer is launched successfully..")
     
 def stop_aws_cluster(conn, opts, ec2_opts):
-    (master_nodes, slave_nodes) = get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
+    (master_nodes, slave_nodes) = spark_ec2.get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
     print("Stopping master...")
     for inst in master_nodes:
         if inst.state not in ["shutting-down", "terminated"]:
@@ -166,7 +166,7 @@ def get_ec2_opts():
                   "--copy-aws-credentials --vpc-id=vpc-a39d60c7 --subnet-id=subnet-f5350dac "
                   "--hadoop-major-version=yarn --ebs-vol-size=250 --ebs-vol-type=gp2 "
                   "--spark-ec2-git-repo=https://github.com/lckung/spark-ec2 "
-                  "--use-existing-master --ami=ami-dd97d8b8 --resume").split()
+                  "--use-existing-master --ami=ami-49cc9b2c --resume").split()
     opt_parser = spark_ec2.get_parser()
     (ec2_opts, args) = opt_parser.parse_args(args=launch_cmd)
     return ec2_opts
