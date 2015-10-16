@@ -39,7 +39,10 @@ def get_opt_parser():
         help="Output model file")
     parser.add_option(
         "--stop-cluster", action="store_true", default=False,
-        help="Whether to stop the aws cluster after training.")
+        help="Whether to stop the aws cluster after training")
+    parser.add_option(
+        "--train-date", default="",
+        help="Override the date of train set")
     return parser
 
 
@@ -52,13 +55,13 @@ def run_cmd(cmd):
 
 def launch_aws_cluster(conn, our_opts, ec2_opts):
     (master_nodes, slave_nodes) = spark_ec2.launch_cluster(conn, ec2_opts, our_opts.cluster_name)
-    wait_for_cluster_state(
+    spark_ec2.wait_for_cluster_state(
         conn=conn,
         opts=ec2_opts,
         cluster_instances=(master_nodes + slave_nodes),
         cluster_state='ssh-ready'
     )
-    setup_cluster(conn, master_nodes, slave_nodes, ec2_opts, True)
+    spark_ec2.setup_cluster(conn, master_nodes, slave_nodes, ec2_opts, True)
     return master_nodes
 
 
@@ -186,10 +189,13 @@ def main():
         print("Cluster {cluster} is already running".format(cluster=opts.cluster_name))
         master_nodes = existing_masters
     else:
-        master_nodes = launch_aws_cluster(opts, ec2_opts)
+        master_nodes = launch_aws_cluster(conn, opts, ec2_opts)
     
     # launch the training job
-    trainset_date = get_trainset_date(opts)
+    if opts.train_date == "":
+        trainset_date = get_trainset_date(opts)
+    else:
+        trainset_date = opts.train_date
     launch_training_job(master_nodes, trainset_date, opts, ec2_opts)
     
     # wait till training is done
