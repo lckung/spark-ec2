@@ -1,20 +1,44 @@
 #!/usr/bin/env python
 from __future__ import division, print_function, with_statement
-
 from datetime import datetime
+from optparse import OptionParser
+from sys import stderr
+
+import spark_ec2
 import subprocess
 import sys
-import spark_ec2
-from optparse import OptionParser
 import boto
+import time
 
-TRAIN_INPUT = "trainout/withpubs_pricer.gz"
-HADOOP = "/usr/bin/hadoop"
 S3N_PREFIX = "s3n://spark.data/daily"
-S3A_PREFIX = "s3a://spark.data/daily"
-AWS_CLUSTER_NAME = "spark-cluster-32n-spot"
-DONE_FILE = "TRAINING_DONE"
-MODEL_FILE = "spark_click_model.tsv.gz"
+
+def get_opt_parser():
+    parser = OptionParser(
+        prog="launch_ec2_trainer",
+        usage="%prog [options]\n")
+    parser.add_option(
+        "--input", default="trainout/withpubs_pricer.gz",
+        help="Training input file on HDFS")
+    parser.add_option(
+        "--hadoop-cmd", default="/usr/bin/hadoop",
+        help="Path to hadoop command")
+    parser.add_option(
+        "--skip-copy-input", action="store_true", default=False,
+        help="Skip copy input file to S3")
+    parser.add_option(
+        "--cluster-name", default="spark-cluster-32n-spot",
+        help="Name of the ec2 cluster to launch")
+    parser.add_option(
+        "--s3-folder", default="spark.data/daily",
+        help="S3 path to store output model file and done file")
+    parser.add_option(
+        "--done-file", default="TRAINING_DONE",
+        help="File on S3 path to signal that training is done")
+    parser.add_option(
+        "--model-file", default="spark_click_model.tsv.gz",
+        help="Output model file")
+    return parser
+
 
 def run_cmd(cmd):
     print(cmd)
@@ -22,36 +46,16 @@ def run_cmd(cmd):
     proc.wait()
     return proc.returncode
 
-def run_cmd_ignore(cmd):
-    print(cmd)
-    proc = subprocess.Popen(cmd, shell=True)
-    proc.wait()
 
-
-def launch_aws_cluster():
-    launch_cmd = ("-k spark -i spark.pem --region=us-east-1 --zone=us-east-1d "
-                  "--instance-type=r3.4xlarge -s 18 --spot-price=0.60  --spark-version=v1.5.0 "
-                  "--copy-aws-credentials --vpc-id=vpc-a39d60c7 --subnet-id=subnet-f5350dac "
-                  "--hadoop-major-version=2 --ebs-vol-size=250 --ebs-vol-type=gp2 "
-                  "--spark-ec2-git-repo=https://github.com/lckung/spark-ec2 "
-                  "--use-existing-master --ami=ami-dd97d8b8 launch " + AWS_CLUSTER_NAME).split()
-    opt_parser = spark_ec2.get_parser()
-    (opts, args) = opt_parser.parse_args(args=launch_cmd)
-    
-    try:
-        conn = boto.ec2.connect_to_region(opts.region)
-    except Exception as e:
-        print(repr(e), file=stderr)
-        sys.exit(1)
-
-    (master_nodes, slave_nodes) = spark_ec2.launch_cluster(conn, opts, cluster_name)
+def launch_aws_cluster(conn, our_opts, ec2_opts):
+    (master_nodes, slave_nodes) = spark_ec2.launch_cluster(conn, ec2_opts, our_opts.cluster_name)
     wait_for_cluster_state(
         conn=conn,
-        opts=opts,
+        opts=ec2_opts,
         cluster_instances=(master_nodes + slave_nodes),
         cluster_state='ssh-ready'
     )
-    setup_cluster(conn, master_nodes, slave_nodes, opts, True)
+    setup_cluster(conn, master_nodes, slave_nodes, ec2_opts, True)
     return master_nodes
 
 
@@ -65,6 +69,14 @@ def ssh_args(opts):
 
 def ssh_command(opts):
     return ['ssh'] + ssh_args(opts)
+
+
+def stringify_command(parts):
+    if isinstance(parts, str):
+        return parts
+    else:
+        return ' '.join(map(pipes.quote, parts))
+
 
 # Run a command on a host through ssh, retrying up to five times
 # and then throwing an exception if ssh continues to fail.
@@ -90,46 +102,56 @@ def ssh(host, opts, command):
             time.sleep(30)
             tries = tries + 1
 
-def launch_copy_input(opts):
+def get_trainset_date(opts):
     try:
-        train_date_str = subprocess.check_output([HADOOP, "fs", "-stat", TRAIN_INPUT]).rstrip()
+        print("Checking training input at {input} on HDFS..".format(input=opts.input))
+        train_date_str = subprocess.check_output([opts.hadoop_cmd, "fs", "-stat", opts.input]).rstrip()
         train_date = datetime.strptime(train_date_str, "%Y-%m-%d %H:%M:%S")
     except subprocess.CalledProcessError:
         print("{input} doesn't exist on HDFS! Unable to continue.".format(input=opts.input))
         sys.exit(1)
+    return train_date.strftime("%Y%m%d")
+
+def launch_copy_input(trainset_date, opts):
     # run distcp to copy training data to S3
-    s3_folder = S3N_PREFIX + "/" + train_date.strftime("%Y%m%d")
-    s3_input_path = s3_folder + "/withpubs_pricer.gz"
-    if subprocess.call([opts.hadoop_cmd, "distcp", opts.input, s3_input_path]) != 0:
+    s3_folder_path = "s3n://" + opts.s3_folder
+    s3_input_prefix = s3_folder_path + "/" + trainset_date.strftime("%Y%m%d")
+    if subprocess.call([opts.hadoop_cmd, "distcp", opts.input, s3_input_prefix + "/withpubs_pricer.gz"]) != 0:
         print("distcp failed!")
         sys.exit(1)
+    print("Distcp finished!\n")
 
-def launch_training_job(master_nodes, s3_folder):
+def launch_training_job(master_nodes, trainset_date, opts, ec2_opts):
+    # TODO: check whether HDFS is running
+    # TODO: check whether YARN is running
     """Launch a training job on spark cluster."""
     master = master_nodes[0].public_dns_name
     print("Setting up HDFS on the cluster..")
-    ssh(host=master, opts=opts, command="chmod u+x setup_pricer_data.sh")
-    ssh(host=master,
-        opts=opts,
-        command="setup_pricer_data.sh")
+    ssh(host=master, opts=ec2_opts, command="chmod u+x /root/setup_pricer_data.sh")
+    ssh(host=master, opts=ec2_opts, command="/root/setup_pricer_data.sh")
     print("Running trainer..")
-    ssh(host=master,opts=opts,
-        command="run_aws_trainer.sh")
+    ssh(host=master, opts=ec2_opts, command="chmod u+x /root/run_aws_trainer.sh")
+    ssh(host=master, opts=ec2_opts, command="nohup /root/run_aws_trainer.sh {d}>log.aws_trainer 2>log.err </dev/null".format(d=trainset_date))
+    print("Trainer is launched successfully..")
     
-def get_opt_parser():
-    parser = OptionParser(
-        prog="launch_ec2_trainer",
-        usage="%prog [options]\n")
-    parser.add_option(
-        "--input", default=TRAIN_INPUT,
-        help="Training input file on HDFS")
-    parser.add_option(
-        "--hadoop-cmd", default="/usr/bin/hadoop",
-        help="Path to hadoop command")
-    parser.add_option(
-        "--skip-copy-input", action="store_true", default=False,
-        help="Skip copy input file to S3")
-    return parser
+def get_boto_conn(ec2_opts):
+    try:
+        conn = boto.ec2.connect_to_region(ec2_opts.region)
+    except Exception as e:
+        print(repr(e), file=stderr)
+        sys.exit(1)
+    return conn
+
+def get_ec2_opts():
+    launch_cmd = ("-k spark -i spark.pem --region=us-east-1 --zone=us-east-1d "
+                  "--instance-type=r3.4xlarge -s 18 --spot-price=0.60  --spark-version=v1.5.0 "
+                  "--copy-aws-credentials --vpc-id=vpc-a39d60c7 --subnet-id=subnet-f5350dac "
+                  "--hadoop-major-version=yarn --ebs-vol-size=250 --ebs-vol-type=gp2 "
+                  "--spark-ec2-git-repo=https://github.com/lckung/spark-ec2 "
+                  "--use-existing-master --ami=ami-dd97d8b8 --resume").split()
+    opt_parser = spark_ec2.get_parser()
+    (ec2_opts, args) = opt_parser.parse_args(args=launch_cmd)
+    return ec2_opts
 
 def main():
     parser = get_opt_parser()
@@ -137,26 +159,37 @@ def main():
     # check if input is there
     if not opts.skip_copy_input:
         launch_copy_input(opts)
-    
+
+    ec2_opts = get_ec2_opts()
+    conn = get_boto_conn(ec2_opts) 
     # launch an AWS cluster
-    master_nodes = launch_aws_cluster()
+    existing_masters, existing_slaves = spark_ec2.get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
+    if existing_slaves:
+        print("Cluster {cluster} is already running".format(cluster=opts.cluster_name))
+        master_nodes = existing_masters
+    else:
+        master_nodes = launch_aws_cluster(opts, ec2_opts)
     
     # launch the training job
-    launch_training_job(master_nodes, s3_folder)
+    trainset_date = get_trainset_date(opts)
+    launch_training_job(master_nodes, trainset_date, opts, ec2_opts)
     
     # wait till training is done
     print("Waiting for training job..")
     while (True):
-        if run_cmd("{hadoop} fs -stat {done_file}".format(hadoop=HADOOP, done_file=s3_folder + "/" + DONE_FILE)) == 0:
+        if run_cmd("{hadoop} fs -stat s3n://{prefix}/{date}/{done_file}".format(
+            hadoop=opts.hadoop_cmd, prefix=opts.s3_folder, date=trainset_date, done_file=opts.done_file)) == 0:
             print("Done file detected! Training job is done")
             break
         sys.sleep(60)
         print(".")
     
     # run distcp to copy the model back to S3 and bidderpath
-    if run_cmd("{hadoop} distcp {s3_train_out} {model}".format(hadoop = HADOOP, s3_train_out = s3_folder + "/" + MODEL_FILE)):
+    if run_cmd("{hadoop} distcp s3n://{prefix}/{date}/{model_file} {model}".format(
+        hadoop=opts.hadoop_cmd, prefix=opts.s3_folder, date=trainset_date, model_file=opts.model_file, model=opts.model_file)):
         print("distcp model back failed!")
         sys.exit(1)
+    print("Model file distcp is done!")
 
 if __name__ == '__main__':
     main()
