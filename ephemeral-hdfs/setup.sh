@@ -23,7 +23,7 @@ if [ -f "$NAMENODE_DIR/current/VERSION" ] && [ -f "$NAMENODE_DIR/current/fsimage
   echo "Hadoop namenode appears to be formatted: skipping"
 else
   echo "Formatting ephemeral HDFS namenode..."
-  $EPHEMERAL_HDFS/bin/hadoop namenode -format
+  $EPHEMERAL_HDFS/bin/hadoop namenode -format -force
 fi
 
 echo "Starting ephemeral HDFS..."

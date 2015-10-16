@@ -1331,7 +1331,7 @@ def real_main():
     try:
         conn = ec2.connect_to_region(opts.region)
     except Exception as e:
-        print((e), file=stderr)
+        print(repr(e), file=stderr)
         sys.exit(1)
 
     # Select an AZ at random if it was not specified.
