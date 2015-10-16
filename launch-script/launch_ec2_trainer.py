@@ -10,8 +10,6 @@ import sys
 import boto
 import time
 
-S3N_PREFIX = "s3n://spark.data/daily"
-
 def get_opt_parser():
     parser = OptionParser(
         prog="launch_ec2_trainer",
@@ -116,9 +114,10 @@ def get_trainset_date(opts):
     except subprocess.CalledProcessError:
         print("{input} doesn't exist on HDFS! Unable to continue.".format(input=opts.input))
         sys.exit(1)
-    return train_date.strftime("%Y%m%d")
+    return train_date
 
-def launch_copy_input(trainset_date, opts):
+def launch_copy_input(opts):
+    trainset_date = get_trainset_date(opts)
     # run distcp to copy training data to S3
     s3_folder_path = "s3n://" + opts.s3_folder
     s3_input_prefix = s3_folder_path + "/" + trainset_date.strftime("%Y%m%d")
