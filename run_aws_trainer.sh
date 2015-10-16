@@ -8,6 +8,7 @@ DEP_JARS=$JAR_DIR/wstx-asl-3.1.2.jar,$JAR_DIR/stax2.jar,$JAR_DIR/wurfl-1.5.1.jar
 HADOOP_OPTS="-Dmapreduce.map.java.opts=-Xmx5120m -Dmapreduce.map.memory.mb=6100"
 HADOOP_OPTS2="-Dmapreduce.map.java.opts=-Xmx15000m -Dmapreduce.map.memory.mb=16384"
 MODEL_FILE=spark_click_model.tsv
+DONE_FILE=TRAINING_DONE
 OUTPUT_PATH="s3a://spark.data/daily/$DATE/"
 WORK_DIR=/vol0/lkung-work
 HADOOP=/root/ephemeral-hdfs/bin/hadoop
@@ -73,7 +74,7 @@ unset SPARK_WORKER_INSTANCES
 --conf spark.akka.frameSize=1024 \
 --conf spark.shuffle.service.enabled=true \
 --conf spark.dynamicAllocation.minExecutors=24 \
---conf spark.kryoserializer.buffer.max=256m \
+--conf spark.kryoserializer.buffer.max=512m \
 --num-executors 80 \
 --executor-memory 26g \
 --executor-cores 4 \
@@ -132,7 +133,7 @@ fi
 
 if ! $HADOOP fs -test -f selection/featuremap.tsv ; then
   echo "Step 3: Running spark script to add indices to featuremap.."
-  run_spark_job --class AssignIdToFeatureMap fractional-trainer-1.5.jar --numFeatures 40000000 selection/feature_pvalues.tsv selection/featuremap-out.tsv
+  run_spark_job --class AssignIdToFeatureMap fractional-trainer-1.5.jar --numFeatures 25000000 selection/feature_pvalues.tsv selection/featuremap-out.tsv
   $HADOOP fs -getmerge selection/featuremap-out.tsv featuremap.tsv
   $HADOOP fs -put featuremap.tsv selection/featuremap.tsv
   $HADOOP fs -rm -r selection/featuremap-out.tsv
@@ -152,7 +153,7 @@ if ! $HADOOP fs -test -f ${OUTPUT_PATH}/${MODEL_FILE} ; then
   fi
   $HADOOP fs -getmerge selection/one_click_model.tsv ${MODEL_FILE}
   gzip ${MODEL_FILE}
-  $HADOOP fs -put ${MODEL_FILE}.gz ${OUTPUT_PATH}/${MODEL_FILE}
+  $HADOOP fs -put ${MODEL_FILE}.gz ${OUTPUT_PATH}/
   $HADOOP fs -touchz ${OUTPUT_PATH}/${DONE_FILE}
 fi
 
