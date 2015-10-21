@@ -58,7 +58,8 @@ run_spark_trainer () {
   ITER=20
   STEP_SIZE=1
   BATCH_FRAC=1.0
-  REG_PARAM=1e-8
+  REG_PARAM=1e-9
+  TEST_FRAC=0.001
 
 export HADOOP_CONF_DIR=/root/ephemeral-hdfs/conf
 unset SPARK_WORKER_INSTANCES
@@ -83,7 +84,7 @@ unset SPARK_WORKER_INSTANCES
 --class BinaryClassification \
 fractional-trainer-1.5.jar \
 --algorithm ${ALGORITHM} --regType ${REG_TYPE} --regParam ${REG_PARAM} \
---maxIter ${ITER} --stepSize ${STEP_SIZE} --miniBatchFrac ${BATCH_FRAC} \
+--maxIter ${ITER} --stepSize ${STEP_SIZE} --miniBatchFrac ${BATCH_FRAC} --fracTest ${TEST_FRAC} \
 --kryoSerializer --featureMap ${FEATURE_MAP} ${INPUT} ${MODEL_OUT} 2>&1 |tee ${TRAINLOG_OUT}
   if [ $? -ne 0 ]; then 
     echo "spark trainer failed!"
