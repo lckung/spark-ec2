@@ -134,10 +134,10 @@ def launch_training_job(master_nodes, trainset_date, opts, ec2_opts):
     print("Setting up HDFS on the cluster..")
     ssh(host=master, opts=ec2_opts, command="chmod u+x /root/spark-ec2/setup_pricer_data.sh")
     ssh(host=master, opts=ec2_opts, command="/root/spark-ec2/setup_pricer_data.sh")
-    print("Running trainer..")
+    print("Running trainer with train date={d}..".format(d=trainset_date))
     ssh(host=master, opts=ec2_opts, command="chmod u+x /root/spark-ec2/run_aws_trainer.sh")
     ssh(host=master, opts=ec2_opts, command="nohup /root/spark-ec2/run_aws_trainer.sh {d} 2>&1 </dev/null |tee log.aws_trainer".format(d=trainset_date))
-    print("Trainer is launched successfully..")
+    print("Trainer was launched successfully..")
     
 def stop_aws_cluster(conn, opts, ec2_opts):
     (master_nodes, slave_nodes) = spark_ec2.get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
@@ -192,9 +192,10 @@ def main():
     
     # launch the training job
     if opts.train_date == "":
-        trainset_date = get_trainset_date(opts)
+        trainset_date = get_trainset_date(opts).strftime("%Y%m%d")
     else:
         trainset_date = opts.train_date
+    print("Train date is set to {d}".format(d=trainset_date))
     launch_training_job(master_nodes, trainset_date, opts, ec2_opts)
     
     # wait till training is done
