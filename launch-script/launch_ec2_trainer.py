@@ -41,12 +41,21 @@ def get_opt_parser():
     parser.add_option(
         "--train-date", default="",
         help="Override the date of train set")
+    parser.add_option(
+        "--num-slaves", default=18,
+        help="Number of slave nodes to create in the aws cluster")
     return parser
 
 
 def run_cmd(cmd):
     print(cmd)
     proc = subprocess.Popen(cmd, shell=True)
+    proc.wait()
+    return proc.returncode
+
+
+def check_running_cmd(cmd):
+    proc = subprocess.Popen("ps -ef|grep {cmd}|grep -v grep".format(cmd=cmd), shell=True)
     proc.wait()
     return proc.returncode
 
@@ -81,6 +90,12 @@ def stringify_command(parts):
     else:
         return ' '.join(map(pipes.quote, parts))
 
+def check_yarn_service(master, ec2_opts, num_nodes):
+    """
+    Check whether all the node managers are running
+    """
+    output = spark_ec2.ssh_read(master, ec2_opts, "/root/ephemeral-hdfs/bin/yarn node -list -all |grep RUNNING |wc -l")
+    return int(output) == num_nodes
 
 # Run a command on a host through ssh, retrying up to five times
 # and then throwing an exception if ssh continues to fail.
@@ -162,31 +177,48 @@ def get_boto_conn(ec2_opts):
         sys.exit(1)
     return conn
 
-def get_ec2_opts():
+def get_ec2_opts(opts):
     launch_cmd = ("-k spark -i spark.pem --region=us-east-1 --zone=us-east-1d "
-                  "--instance-type=r3.4xlarge -s 18 --spot-price=0.60  --spark-version=v1.5.0 "
+                  "--instance-type=r3.4xlarge --spot-price=0.60  --spark-version=v1.5.0 "
                   "--copy-aws-credentials --vpc-id=vpc-a39d60c7 --subnet-id=subnet-f5350dac "
                   "--hadoop-major-version=yarn --ebs-vol-size=250 --ebs-vol-type=gp2 "
                   "--spark-ec2-git-repo=https://github.com/lckung/spark-ec2 "
                   "--use-existing-master --ami=ami-49cc9b2c --resume").split()
     opt_parser = spark_ec2.get_parser()
     (ec2_opts, args) = opt_parser.parse_args(args=launch_cmd)
+    ec2_opts.slaves = opts.num_slaves
     return ec2_opts
 
 def main():
+    if check_running_cmd("launch_ec2_trainer.py") == 0:
+        print("launch_ec2_trainer.py is alreadying running. Exiting..")
+        sys.exit(1)
     parser = get_opt_parser()
     (opts, args) = parser.parse_args()
     # check if input is there
     if not opts.skip_copy_input:
         launch_copy_input(opts)
+    else:
+        print("Skipping distcp step..")
 
-    ec2_opts = get_ec2_opts()
+    ec2_opts = get_ec2_opts(opts)
     conn = get_boto_conn(ec2_opts) 
     # launch an AWS cluster
-    existing_masters, existing_slaves = spark_ec2.get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
-    if existing_slaves:
+    print("Checking whether there exists an aws cluster..")
+    masters_nodes, slave_nodes = spark_ec2.get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
+    if slave_nodes:
         print("Cluster {cluster} is already running".format(cluster=opts.cluster_name))
-        master_nodes = existing_masters
+        print("Wait until the cluster is SSH-ready..")
+        spark_ec2.wait_for_cluster_state(
+            conn=conn,
+            opts=ec2_opts,
+            cluster_instances=(master_nodes + slave_nodes),
+            cluster_state='ssh-ready'
+        )
+        print("Checking required service..")
+        if not check_yarn_service(master_nodes[0].public_dns_name, ec2_opts, opts.num_slaves):
+            print("Yarn service is not ready. Running setup script..")
+            spark_ec2.setup_cluster(conn, master_nodes, slave_nodes, ec2_opts, True)
     else:
         master_nodes = launch_aws_cluster(conn, opts, ec2_opts)
     

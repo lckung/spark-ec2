@@ -14,7 +14,7 @@ WORK_DIR=/vol0/lkung-work
 HADOOP=/root/ephemeral-hdfs/bin/hadoop
 
 run_cmd () {
-  "$@"
+  $@
   if [ $? -ne 0 ]; then exit 1; fi
 }
 
@@ -119,12 +119,12 @@ if ! $HADOOP fs -test -d selection/click_counts.tsv ; then
   echo "Step 1: Running click counting map reduce.."
   $HADOOP fs -rm -r selection/click_counts.tsv
   run_cmd $HADOOP jar pricer-feature-selection.jar training.FeatureSelectionMapReduce ${HADOOP_OPTS} -libjars ${DEP_JARS} count_clicks ${TRAIN_SET} selection/click_counts.tsv
-  $HADOOP fs -getmerge selection/click_counts.tsv click_counts.tsv
+  run_cmd $HADOOP fs -getmerge selection/click_counts.tsv click_counts.tsv
 fi
 
 if ! $HADOOP fs -test -d selection/feature_pvalues.tsv ; then 
   rm -f click_counts.tsv
-  $HADOOP fs -getmerge selection/click_counts.tsv click_counts.tsv
+  run_cmd $HADOOP fs -getmerge selection/click_counts.tsv click_counts.tsv
   NUM_POS_CLICKS=`cat click_counts.tsv | cut -f2`
   NUM_NEG_CLICKS=`cat click_counts.tsv | cut -f3`
   echo "Step 2: Running feature selection map reduce with num_pos_click=${NUM_POS_CLICKS}, num_neg_clicks=${NUM_NEG_CLICKS}.."
@@ -135,8 +135,8 @@ fi
 if ! $HADOOP fs -test -f selection/featuremap.tsv ; then
   echo "Step 3: Running spark script to add indices to featuremap.."
   run_spark_job --class AssignIdToFeatureMap fractional-trainer-1.5.jar --numFeatures 40000000 selection/feature_pvalues.tsv selection/featuremap-out.tsv
-  $HADOOP fs -getmerge selection/featuremap-out.tsv featuremap.tsv
-  $HADOOP fs -put featuremap.tsv selection/featuremap.tsv
+  run_cmd $HADOOP fs -getmerge selection/featuremap-out.tsv featuremap.tsv
+  run_cmd $HADOOP fs -put featuremap.tsv selection/featuremap.tsv
   $HADOOP fs -rm -r selection/featuremap-out.tsv
 fi
 
@@ -145,17 +145,20 @@ if ! $HADOOP fs -test -d selection/libsvm.txt.bz2 ; then
   run_cmd $HADOOP jar pricer-feature-selection.jar training.FeatureSelectionMapReduce ${HADOOP_OPTS2} -libjars ${DEP_JARS} convert ${TRAIN_SET} selection/libsvm.txt.bz2 selection/featuremap.tsv
 fi
 
-if ! $HADOOP fs -test -f ${OUTPUT_PATH}/${MODEL_FILE} ; then
+if ! $HADOOP fs -test -f ${OUTPUT_PATH}/${MODEL_FILE}.gz ; then
   echo "Step 5: Running spark trainer.."
+  $HADOOP fs -rm -f ${OUTPUT_PATH}/${DONE_FILE}
   run_spark_trainer "selection/featuremap.tsv" "selection/libsvm.txt.bz2" "selection/one_click_model.tsv" "log-training"
   if ! $HADOOP fs -test -d selection/one_click_model.tsv ; then
     echo "Model output file 'selection/one_click_model.tsv' not found!"
     exit 1
   fi
-  $HADOOP fs -getmerge selection/one_click_model.tsv ${MODEL_FILE}
-  gzip ${MODEL_FILE}
-  $HADOOP fs -put ${MODEL_FILE}.gz ${OUTPUT_PATH}/
-  $HADOOP fs -touchz ${OUTPUT_PATH}/${DONE_FILE}
+  run_cmd $HADOOP fs -getmerge selection/one_click_model.tsv ${MODEL_FILE}
+  run_cmd gzip ${MODEL_FILE}
+  run_cmd $HADOOP fs -put ${MODEL_FILE}.gz ${OUTPUT_PATH}/
+  run_cmd $HADOOP fs -touchz ${OUTPUT_PATH}/${DONE_FILE}
+else
+  echo "Found ${OUTPUT_PATH}/${MODEL_FILE}.gz . No more job to run."
 fi
 
 popd >/dev/null
