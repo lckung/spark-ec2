@@ -134,7 +134,7 @@ fi
 
 if ! $HADOOP fs -test -f selection/featuremap.tsv ; then
   echo "Step 3: Running spark script to add indices to featuremap.."
-  run_spark_job --class AssignIdToFeatureMap fractional-trainer-1.5.jar --numFeatures 25000000 selection/feature_pvalues.tsv selection/featuremap-out.tsv
+  run_spark_job --class AssignIdToFeatureMap fractional-trainer-1.5.jar --numFeatures 40000000 selection/feature_pvalues.tsv selection/featuremap-out.tsv
   $HADOOP fs -getmerge selection/featuremap-out.tsv featuremap.tsv
   $HADOOP fs -put featuremap.tsv selection/featuremap.tsv
   $HADOOP fs -rm -r selection/featuremap-out.tsv
