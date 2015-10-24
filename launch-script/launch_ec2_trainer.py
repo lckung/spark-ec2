@@ -4,6 +4,7 @@ from datetime import datetime
 from optparse import OptionParser
 from sys import stderr
 
+import os
 import socket
 import spark_ec2
 import subprocess
@@ -42,6 +43,9 @@ def get_opt_parser():
     parser.add_option(
         "--num-slaves", default=18,
         help="Number of slave nodes to create in the aws cluster")
+    parser.add_option(
+        "--work-dir", default="/home/hduser/spark-ec2/launch-script",
+        help="Working directory. Must contain spark.pem for connecting AWS servers")
     return parser
 
 
@@ -99,7 +103,8 @@ def check_yarn_service(master, ec2_opts, num_nodes):
     Check whether all the node managers are running
     """
     output = spark_ec2.ssh_read(master, ec2_opts, "/root/ephemeral-hdfs/bin/yarn node -list -all |grep RUNNING |wc -l")
-    return int(output) == int(num_nodes)
+    # Ok if one slave is down
+    return int(output) >= int(num_nodes) - 1
 
 
 def check_hdfs_service(master, ec2_opts, num_nodes):
@@ -107,7 +112,8 @@ def check_hdfs_service(master, ec2_opts, num_nodes):
     Check whether all the HDFS nodes (data nodes) are running.
     """
     output = spark_ec2.ssh_read(master, ec2_opts, "/root/ephemeral-hdfs/bin/hdfs dfsadmin -report|grep Name |wc -l")
-    return int(output) == int(num_nodes)
+    # Ok if one slave is down
+    return int(output) >= int(num_nodes) - 1
 
 # Run a command on a host through ssh, retrying up to five times
 # and then throwing an exception if ssh continues to fail.
@@ -234,6 +240,10 @@ def main():
         print("Another launch_ec2_trainer.py is already running. Exiting..")
         sys.exit(1)
     (opts, args) = get_opt_parser().parse_args()
+    # change working directory if specified
+    if opts.work_dir:
+        print("Setting work dir to {dir}".format(dir=opts.work_dir))
+        os.chdir(opts.work_dir)
     # check if input is there
     if not check_trainset_on_s3(opts):
         launch_copy_input(opts)
@@ -245,7 +255,14 @@ def main():
     # launch an AWS cluster
     print("Checking whether there exists an aws cluster..")
     master_nodes, slave_nodes = spark_ec2.get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
+    
     if slave_nodes:
+        if master_nodes:
+            print("Starting master...")
+            for inst in master_nodes:
+                if inst.state not in ["shutting-down", "terminated"]:
+                    inst.start()
+    
         print("Cluster {cluster} is already running".format(cluster=opts.cluster_name))
         print("Wait until the cluster is SSH-ready..")
         spark_ec2.wait_for_cluster_state(
@@ -265,6 +282,7 @@ def main():
             spark_ec2.setup_cluster(conn, master_nodes, slave_nodes, ec2_opts, True)
             setup_counts += 1
     else:
+        print("Launching aws cluster '{name}'..".format(name=opts.cluster_name))
         master_nodes = launch_aws_cluster(conn, opts, ec2_opts)
     
     # launch the training job
@@ -275,7 +293,7 @@ def main():
     
     print("Train date is set to {d}".format(d=trainset_date))
     if not has_done_file(trainset_date, opts):
-        print("Done file not detected. Launching AWS cluster..")
+        print("Done file not detected. Launching training job on AWS cluster..")
         launch_training_job(master_nodes, trainset_date, opts, ec2_opts)
         print("Waiting for training job..")
 
@@ -296,5 +314,7 @@ def main():
     if opts.stop_cluster:
         stop_aws_cluster(conn, opts, ec2_opts)
 
+
 if __name__ == '__main__':
     main()
+    sys.exit(0)
