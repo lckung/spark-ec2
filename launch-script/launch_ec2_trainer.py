@@ -99,7 +99,15 @@ def check_yarn_service(master, ec2_opts, num_nodes):
     Check whether all the node managers are running
     """
     output = spark_ec2.ssh_read(master, ec2_opts, "/root/ephemeral-hdfs/bin/yarn node -list -all |grep RUNNING |wc -l")
-    return int(output) == num_nodes
+    return int(output) == int(num_nodes)
+
+
+def check_hdfs_service(master, ec2_opts, num_nodes):
+    """
+    Check whether all the HDFS nodes (data nodes) are running.
+    """
+    output = spark_ec2.ssh_read(master, ec2_opts, "/root/ephemeral-hdfs/bin/hdfs dfsadmin -report|grep Name |wc -l")
+    return int(output) == int(num_nodes)
 
 # Run a command on a host through ssh, retrying up to five times
 # and then throwing an exception if ssh continues to fail.
@@ -225,8 +233,7 @@ def main():
     if can_acquire_lock("launch_ec2_trainer") == 0:
         print("Another launch_ec2_trainer.py is already running. Exiting..")
         sys.exit(1)
-    parser = get_opt_parser()
-    (opts, args) = parser.parse_args()
+    (opts, args) = get_opt_parser().parse_args()
     # check if input is there
     if not check_trainset_on_s3(opts):
         launch_copy_input(opts)
@@ -248,9 +255,15 @@ def main():
             cluster_state='ssh-ready'
         )
         print("Checking required service..")
-        if not check_yarn_service(master_nodes[0].public_dns_name, ec2_opts, opts.num_slaves):
-            print("Yarn service is not ready. Running setup script..")
+        setup_counts = 0
+        while not check_yarn_service(master_nodes[0].public_dns_name, ec2_opts, opts.num_slaves) or \
+        not check_hdfs_service(master_nodes[0].public_dns_name, ec2_opts, opts.num_slaves):
+            if setup_counts >= 1:
+                print("Yarn and HDFS still not ready after setup script. Something is wrong. Quitting..")
+                sys.exit(1)
+            print("Yarn service or HDFS is not ready. Running setup script..")
             spark_ec2.setup_cluster(conn, master_nodes, slave_nodes, ec2_opts, True)
+            setup_counts += 1
     else:
         master_nodes = launch_aws_cluster(conn, opts, ec2_opts)
     
