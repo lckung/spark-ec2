@@ -4,6 +4,7 @@ from datetime import datetime
 from optparse import OptionParser
 from sys import stderr
 
+import socket
 import spark_ec2
 import subprocess
 import sys
@@ -20,9 +21,6 @@ def get_opt_parser():
     parser.add_option(
         "--hadoop-cmd", default="/usr/bin/hadoop",
         help="Path to hadoop command")
-    parser.add_option(
-        "--skip-copy-input", action="store_true", default=False,
-        help="Skip copy input file to S3")
     parser.add_option(
         "--cluster-name", default="spark-cluster-32n-spot",
         help="Name of the ec2 cluster to launch")
@@ -54,10 +52,16 @@ def run_cmd(cmd):
     return proc.returncode
 
 
-def check_running_cmd(cmd):
-    proc = subprocess.Popen("ps -ef|grep {cmd}|grep -v grep".format(cmd=cmd), shell=True)
-    proc.wait()
-    return proc.returncode
+def can_acquire_lock(lock_name):
+    global lock_socket
+    lock_socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        lock_socket.bind('\0' + lock_name)
+        print("Acquired the socket lock '{name}'".format(name=lock_name))
+        return True
+    except socket.error:
+        print("Lock {name} already exists!".format(name=lock_name))
+        return False
 
 
 def launch_aws_cluster(conn, our_opts, ec2_opts):
@@ -141,6 +145,28 @@ def launch_copy_input(opts):
         sys.exit(1)
     print("Distcp finished!\n")
 
+
+def check_trainset_on_s3(opts):
+    """
+    Check whether train set on s3 is present and appeared to be the same as the trainset on HDFS.
+    Returns True if the two directories are identical.
+    """
+    trainset_date = get_trainset_date(opts)
+    s3_path = "s3n://" + opts.s3_folder + "/" + trainset_date.strftime("%Y%m%d") + "/withpubs_pricer.gz"
+    if run_cmd("{hadoop} fs -test -d {s3_path}".format(hadoop=opts.hadoop_cmd, s3_path=s3_path)) != 0:
+        return False
+    if run_cmd("{hadoop} fs -test -d {input}".format(hadoop=opts.hadoop_cmd, input=opts.input)) != 0:
+        print("Trainset {input} is not found!".format(input=opts.input))
+        sys.exit(1)
+    input_size = subprocess.check_output("{hadoop} fs -du -s {input}".format(hadoop=opts.hadoop_cmd, input=opts.input).split()).split()[0]
+    s3_size = subprocess.check_output("{hadoop} fs -du -s {s3_path}".format(hadoop=opts.hadoop_cmd, s3_path=s3_path).split()).split()[0]
+    if input_size != s3_size:
+        print("Input trainset size: {input_size}, trainset size on S3: {s3_size}".format(input_size=input_size, s3_size=s3_size))
+        return False
+    else:
+        return True
+    
+
 def launch_training_job(master_nodes, trainset_date, opts, ec2_opts):
     # TODO: check whether HDFS is running
     # TODO: check whether YARN is running
@@ -189,14 +215,20 @@ def get_ec2_opts(opts):
     ec2_opts.slaves = opts.num_slaves
     return ec2_opts
 
+
+def has_done_file(trainset_date, opts):
+    return run_cmd("{hadoop} fs -stat s3n://{prefix}/{date}/{done_file}".format(
+        hadoop=opts.hadoop_cmd, prefix=opts.s3_folder, date=trainset_date, done_file=opts.done_file)) == 0
+
+
 def main():
-    if check_running_cmd("launch_ec2_trainer.py") == 0:
-        print("launch_ec2_trainer.py is alreadying running. Exiting..")
+    if can_acquire_lock("launch_ec2_trainer") == 0:
+        print("Another launch_ec2_trainer.py is already running. Exiting..")
         sys.exit(1)
     parser = get_opt_parser()
     (opts, args) = parser.parse_args()
     # check if input is there
-    if not opts.skip_copy_input:
+    if not check_trainset_on_s3(opts):
         launch_copy_input(opts)
     else:
         print("Skipping distcp step..")
@@ -205,7 +237,7 @@ def main():
     conn = get_boto_conn(ec2_opts) 
     # launch an AWS cluster
     print("Checking whether there exists an aws cluster..")
-    masters_nodes, slave_nodes = spark_ec2.get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
+    master_nodes, slave_nodes = spark_ec2.get_existing_cluster(conn, ec2_opts, opts.cluster_name, die_on_error=False)
     if slave_nodes:
         print("Cluster {cluster} is already running".format(cluster=opts.cluster_name))
         print("Wait until the cluster is SSH-ready..")
@@ -227,14 +259,16 @@ def main():
         trainset_date = get_trainset_date(opts).strftime("%Y%m%d")
     else:
         trainset_date = opts.train_date
-    print("Train date is set to {d}".format(d=trainset_date))
-    launch_training_job(master_nodes, trainset_date, opts, ec2_opts)
     
+    print("Train date is set to {d}".format(d=trainset_date))
+    if not has_done_file(trainset_date, opts):
+        print("Done file not detected. Launching AWS cluster..")
+        launch_training_job(master_nodes, trainset_date, opts, ec2_opts)
+        print("Waiting for training job..")
+
     # wait till training is done
-    print("Waiting for training job..")
     while (True):
-        if run_cmd("{hadoop} fs -stat s3n://{prefix}/{date}/{done_file}".format(
-            hadoop=opts.hadoop_cmd, prefix=opts.s3_folder, date=trainset_date, done_file=opts.done_file)) == 0:
+        if has_done_file(trainset_date, opts):
             print("Done file detected! Training job is done")
             break
         time.sleep(60)
