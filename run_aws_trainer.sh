@@ -54,11 +54,11 @@ run_spark_trainer () {
   echo "Training log: $TRAINLOG_OUT"
 
   ALGORITHM=LBFGS
-  REG_TYPE=MYL1
+  REG_TYPE=MYL2
   ITER=20
   STEP_SIZE=1
   BATCH_FRAC=1.0
-  REG_PARAM=1e-9
+  REG_PARAM=5e-5
   TEST_FRAC=0.001
 
 export HADOOP_CONF_DIR=/root/ephemeral-hdfs/conf
