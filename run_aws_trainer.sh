@@ -154,7 +154,7 @@ if ! $HADOOP fs -test -f ${OUTPUT_PATH}/${MODEL_FILE}.gz ; then
     exit 1
   fi
   run_cmd $HADOOP fs -getmerge selection/one_click_model.tsv ${MODEL_FILE}
-  run_cmd gzip ${MODEL_FILE}
+  run_cmd gzip -f ${MODEL_FILE}
   run_cmd $HADOOP fs -put ${MODEL_FILE}.gz ${OUTPUT_PATH}/
   run_cmd $HADOOP fs -touchz ${OUTPUT_PATH}/${DONE_FILE}
 else
