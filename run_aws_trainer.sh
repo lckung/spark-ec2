@@ -4,7 +4,7 @@ SPARK_MASTER=yarn-client
 SPARK_HOME=/root/spark
 TRAIN_SET=s3a://spark.data/input/20151013/withpubs_pricer.gz
 JAR_DIR=/vol0/lkung-work/pricer_depjars
-DEP_JARS=$JAR_DIR/wstx-asl-3.1.2.jar,$JAR_DIR/stax2.jar,$JAR_DIR/wurfl-1.5.1.jar,$JAR_DIR/slf4j-api-1.7.7.jar,$JAR_DIR/servlet-api-2.5.jar,$JAR_DIR/commons-logging-1.1.3.jar,$JAR_DIR/commons-lang-2.6.jar,$JAR_DIR/commons-math3-3.5.jar 
+DEP_JARS=$JAR_DIR/wstx-asl-3.1.2.jar,$JAR_DIR/stax2.jar,$JAR_DIR/wurfl-1.5.1.jar,$JAR_DIR/slf4j-api-1.7.7.jar,$JAR_DIR/servlet-api-2.5.jar,$JAR_DIR/commons-logging-1.1.3.jar,$JAR_DIR/commons-lang-2.6.jar,$JAR_DIR/commons-math3-3.5.jar,$JAR_DIR/trove4j-3.0.3.jar
 HADOOP_OPTS="-Dmapreduce.map.java.opts=-Xmx5120m -Dmapreduce.map.memory.mb=6100"
 HADOOP_OPTS2="-Dmapreduce.map.java.opts=-Xmx15000m -Dmapreduce.map.memory.mb=16384"
 MODEL_FILE=spark_click_model.tsv
