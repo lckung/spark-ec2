@@ -58,7 +58,7 @@ run_spark_trainer () {
   ITER=35
   STEP_SIZE=1
   BATCH_FRAC=1.0
-  REG_PARAM=6e-5
+  REG_PARAM=5e-6
   TEST_FRAC=0.001
 
 export HADOOP_CONF_DIR=/root/ephemeral-hdfs/conf
