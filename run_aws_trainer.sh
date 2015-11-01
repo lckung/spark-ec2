@@ -55,7 +55,7 @@ run_spark_trainer () {
 
   ALGORITHM=LBFGS
   REG_TYPE=MYL2
-  ITER=30
+  ITER=35
   STEP_SIZE=1
   BATCH_FRAC=1.0
   REG_PARAM=6e-5
@@ -64,6 +64,7 @@ run_spark_trainer () {
 export HADOOP_CONF_DIR=/root/ephemeral-hdfs/conf
 unset SPARK_WORKER_INSTANCES
   $HADOOP fs -rm -r ${MODEL_OUT}
+  $HADOOP fs -rm -r ${MODEL_OUT}-raw
   ${SPARK_HOME}/bin/spark-submit \
 --master ${SPARK_MASTER} \
 --conf spark.local.dir=/vol0/scratch \
@@ -74,8 +75,7 @@ unset SPARK_WORKER_INSTANCES
 --conf spark.network.timeout=240000 \
 --conf spark.akka.frameSize=1024 \
 --conf spark.shuffle.service.enabled=true \
---conf spark.dynamicAllocation.minExecutors=24 \
---conf spark.kryoserializer.buffer.max=512m \
+--conf spark.kryoserializer.buffer.max=1024m \
 --num-executors 80 \
 --executor-memory 26g \
 --executor-cores 4 \
@@ -90,6 +90,7 @@ fractional-trainer-1.5.jar \
     echo "spark trainer failed!"
     exit 1
   fi
+#--conf spark.dynamicAllocation.minExecutors=24 \
 #--conf spark.dynamicAllocation.enabled=true \
 }
 
