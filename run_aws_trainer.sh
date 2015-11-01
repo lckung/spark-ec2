@@ -75,11 +75,12 @@ unset SPARK_WORKER_INSTANCES
 --conf spark.network.timeout=240000 \
 --conf spark.akka.frameSize=1024 \
 --conf spark.shuffle.service.enabled=true \
---conf spark.kryoserializer.buffer.max=1024m \
+--conf spark.dynamicAllocation.minExecutors=24 \
+--conf spark.kryoserializer.buffer.max=2047m \
 --num-executors 80 \
---executor-memory 26g \
+--executor-memory 30g \
 --executor-cores 4 \
---driver-memory 26g \
+--driver-memory 30g \
 --driver-cores 4 \
 --class BinaryClassification \
 fractional-trainer-1.5.jar \
@@ -135,7 +136,7 @@ fi
 
 if ! $HADOOP fs -test -f selection/featuremap.tsv ; then
   echo "Step 3: Running spark script to add indices to featuremap.."
-  run_spark_job --class AssignIdToFeatureMap fractional-trainer-1.5.jar --numFeatures 40000000 selection/feature_pvalues.tsv selection/featuremap-out.tsv
+  run_spark_job --class AssignIdToFeatureMap fractional-trainer-1.5.jar --numFeatures 50000000 selection/feature_pvalues.tsv selection/featuremap-out.tsv
   run_cmd $HADOOP fs -getmerge selection/featuremap-out.tsv featuremap.tsv
   run_cmd $HADOOP fs -put featuremap.tsv selection/featuremap.tsv
   $HADOOP fs -rm -r selection/featuremap-out.tsv
