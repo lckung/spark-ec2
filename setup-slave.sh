@@ -35,7 +35,7 @@ if [[ $instance_type == r3* || $instance_type == i2* || $instance_type == hi1* ]
   mkdir /mnt
   # To turn TRIM support on, uncomment the following line.
   #echo '/dev/sdb /mnt  ext4  defaults,noatime,nodiratime,discard 0 0' >> /etc/fstab
-  mkfs.ext4 -E lazy_itable_init=0,lazy_journal_init=0 /dev/sdb
+  mkfs.ext4 -q -E lazy_itable_init=0,lazy_journal_init=0 /dev/sdb
   mount -o $EXT4_MOUNT_OPTS /dev/sdb /mnt
 
   if [[ $instance_type == "r3.8xlarge" || $instance_type == "hi1.4xlarge" ]]; then
@@ -43,13 +43,13 @@ if [[ $instance_type == r3* || $instance_type == i2* || $instance_type == hi1* ]
     # To turn TRIM support on, uncomment the following line.
     #echo '/dev/sdc /mnt2  ext4  defaults,noatime,nodiratime,discard 0 0' >> /etc/fstab
     if [[ $instance_type == "r3.8xlarge" ]]; then
-      mkfs.ext4 -E lazy_itable_init=0,lazy_journal_init=0 /dev/sdc      
+      mkfs.ext4 -q -E lazy_itable_init=0,lazy_journal_init=0 /dev/sdc
       mount -o $EXT4_MOUNT_OPTS /dev/sdc /mnt2
     fi
     # To turn TRIM support on, uncomment the following line.
     #echo '/dev/sdf /mnt2  ext4  defaults,noatime,nodiratime,discard 0 0' >> /etc/fstab
     if [[ $instance_type == "hi1.4xlarge" ]]; then
-      mkfs.ext4 -E lazy_itable_init=0,lazy_journal_init=0 /dev/sdf      
+      mkfs.ext4 -q -E lazy_itable_init=0,lazy_journal_init=0 /dev/sdf
       mount -o $EXT4_MOUNT_OPTS /dev/sdf /mnt2
     fi    
   fi
