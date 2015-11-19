@@ -40,6 +40,8 @@ case "$HADOOP_MAJOR_VERSION" in
     $EPHEMERAL_HDFS/sbin/start-dfs.sh
     echo "Starting YARN"
     $EPHEMERAL_HDFS/sbin/start-yarn.sh
+    echo "Starting history server"
+    $EPHEMERAL_HDFS/sbin/mr-jobhistory-daemon.sh start historyserver
     ;;
   *)
      echo "ERROR: Unknown Hadoop version"
