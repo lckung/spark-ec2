@@ -21,6 +21,16 @@
   </property>
 
   <property>
+    <name>fs.trash.interval</name>
+    <value>30</value>
+  </property>
+ 
+  <property>
+    <name>fs.trash.checkpoint.interval</name>
+    <value>15</value>
+  </property>
+
+  <property>
     <name>io.file.buffer.size</name>
     <value>65536</value>
   </property>
